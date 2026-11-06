@@ -620,7 +620,8 @@ var DefaultConfig = Config{
 	},
 	Redis: redisLiveKit.RedisConfig{},
 	Room: RoomConfig{
-		AutoCreate: true,
+		AutoCreate:               true,
+		EnableFullRoomInWebhooks: true,
 		EnabledCodecs: []CodecSpec{
 			{Mime: mime.MimeTypePCMU.String()},
 			{Mime: mime.MimeTypePCMA.String()},
