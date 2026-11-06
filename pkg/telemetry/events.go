@@ -29,6 +29,12 @@ import (
 	"github.com/livekit/protocol/webhook"
 )
 
+// Webhook events for a muted or unmuted track, which LiveKit's protocol doesn't define.
+const (
+	webhookEventTrackMuted   = "track_muted"
+	webhookEventTrackUnmuted = "track_unmuted"
+)
+
 func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.WebhookEvent, opts ...webhook.NotifyOption) {
 	if t.notifier == nil {
 		return
@@ -416,9 +422,19 @@ func (t *telemetryService) TrackMuted(
 	ctx context.Context,
 	room *livekit.Room,
 	participantID livekit.ParticipantID,
+	identity livekit.ParticipantIdentity,
 	track *livekit.TrackInfo,
 ) {
 	t.enqueue(func() {
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event: webhookEventTrackMuted,
+			Room:  room,
+			Participant: &livekit.ParticipantInfo{
+				Sid:      string(participantID),
+				Identity: string(identity),
+			},
+			Track: track,
+		})
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_MUTED, room, participantID, track))
 	})
 }
@@ -427,9 +443,19 @@ func (t *telemetryService) TrackUnmuted(
 	ctx context.Context,
 	room *livekit.Room,
 	participantID livekit.ParticipantID,
+	identity livekit.ParticipantIdentity,
 	track *livekit.TrackInfo,
 ) {
 	t.enqueue(func() {
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event: webhookEventTrackUnmuted,
+			Room:  room,
+			Participant: &livekit.ParticipantInfo{
+				Sid:      string(participantID),
+				Identity: string(identity),
+			},
+			Track: track,
+		})
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNMUTED, room, participantID, track))
 	})
 }

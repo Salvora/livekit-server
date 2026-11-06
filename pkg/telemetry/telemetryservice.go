@@ -60,9 +60,9 @@ type TelemetryService interface {
 	// TrackSubscribeFailed - failure to subscribe to a track
 	TrackSubscribeFailed(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
 	// TrackMuted - the publisher has muted the Track
-	TrackMuted(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackMuted(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
 	// TrackUnmuted - the publisher has muted the Track
-	TrackUnmuted(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackUnmuted(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
 	// TrackPublishedUpdate - track metadata has been updated
 	TrackPublishedUpdate(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackMaxSubscribedVideoQuality - publisher is notified of the max quality subscribers desire
@@ -129,9 +129,9 @@ func (n NullTelemetryService) TrackUnsubscribed(ctx context.Context, room *livek
 }
 func (n NullTelemetryService) TrackSubscribeFailed(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool) {
 }
-func (n NullTelemetryService) TrackMuted(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (n NullTelemetryService) TrackMuted(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo) {
 }
-func (n NullTelemetryService) TrackUnmuted(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (n NullTelemetryService) TrackUnmuted(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo) {
 }
 func (n NullTelemetryService) TrackPublishedUpdate(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 }

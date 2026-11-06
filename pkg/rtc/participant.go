@@ -3424,9 +3424,9 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 
 	if trackInfo != nil && changed {
 		if mute.Muted {
-			p.GetTelemetryListener().OnTrackMuted(p.ID(), trackInfo)
+			p.GetTelemetryListener().OnTrackMuted(p.ID(), p.Identity(), trackInfo)
 		} else {
-			p.GetTelemetryListener().OnTrackUnmuted(p.ID(), trackInfo)
+			p.GetTelemetryListener().OnTrackUnmuted(p.ID(), p.Identity(), trackInfo)
 		}
 	}
 

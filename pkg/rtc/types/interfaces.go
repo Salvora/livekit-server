@@ -770,8 +770,8 @@ type ParticipantTelemetryListener interface {
 	OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool)
 	OnTrackSubscribeFailed(pID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
 	OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration)
-	OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
-	OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackMuted(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo)
+	OnTrackUnmuted(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo)
 	OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackMaxSubscribedVideoQuality(pID livekit.ParticipantID, ti *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality)
 	OnTrackPublishRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats)
@@ -800,9 +800,9 @@ func (NullParticipantTelemetryListener) OnTrackSubscribeFailed(pID livekit.Parti
 }
 func (NullParticipantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration) {
 }
-func (NullParticipantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+func (NullParticipantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo) {
 }
-func (NullParticipantTelemetryListener) OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+func (NullParticipantTelemetryListener) OnTrackUnmuted(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo) {
 }
 func (NullParticipantTelemetryListener) OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
 }
