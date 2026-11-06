@@ -74,7 +74,8 @@ type SubscribedTrack struct {
 	bound           bool
 	onBindCallbacks []func(error)
 
-	onClose atomic.Value // func(bool)
+	onSubscribeStreamStarted atomic.Value //func(time.Duration)
+	onClose                  atomic.Value // func(bool)
 
 	debouncer func(func())
 
@@ -156,6 +157,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		DisableSenderReportPassThrough: params.Subscriber.GetDisableSenderReportPassThrough(),
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
 		EnableStartAtDesiredQuality:    params.EnableStartAtDesiredQuality,
+		RTXBudget:                      params.SubscriberConfig.RTXBudget,
 		Listener:                       s,
 	})
 	if err != nil {
@@ -242,6 +244,10 @@ func (t *SubscribedTrack) Close(isExpectedToResume bool) {
 	}
 }
 
+func (t *SubscribedTrack) OnSubscribeStreamStarted(f func(time.Duration)) {
+	t.onSubscribeStreamStarted.Store(f)
+}
+
 func (t *SubscribedTrack) OnClose(f func(bool)) {
 	t.onClose.Store(f)
 }
@@ -318,7 +324,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	}
 
 	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
-	t.settings = utils.CloneProto(settings)
+	t.settings = proto.CloneOf(settings)
 	t.logger.Debugw("saving subscriber track settings", "settings", logger.Proto(t.settings))
 	t.settingsLock.Unlock()
 
@@ -492,6 +498,9 @@ func (t *SubscribedTrack) OnDownTrackClose(isExpectedToResume bool) {
 	t.Close(isExpectedToResume)
 }
 
-func (t *SubscribedTrack) OnStreamStarted() {
-	t.params.TelemetryListener.OnTrackSubscribeStreamStarted(t.params.Subscriber.ID(), t.params.MediaTrack.ToProto())
+func (t *SubscribedTrack) OnStreamStarted(elapsed time.Duration) {
+	t.params.TelemetryListener.OnTrackSubscribeStreamStarted(t.params.Subscriber.ID(), t.params.MediaTrack.ToProto(), elapsed)
+	if onSubscribeStreamStarted := t.onSubscribeStreamStarted.Load(); onSubscribeStreamStarted != nil {
+		onSubscribeStreamStarted.(func(time.Duration))(elapsed)
+	}
 }

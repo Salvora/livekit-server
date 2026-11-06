@@ -103,6 +103,8 @@ type RoomManager struct {
 
 	forwardStats *sfu.ForwardStats
 
+	subscribePacer *rtc.SubscribePacer
+
 	rpc.UnimplementedParticipantServer
 	rpc.UnimplementedRoomServer
 	rpc.UnimplementedRoomManagerServer
@@ -144,6 +146,7 @@ func NewLocalRoomManager(
 		turnAuthHandler:   turnAuthHandler,
 		bus:               bus,
 		forwardStats:      forwardStats,
+		subscribePacer:    rtc.NewSubscribePacer(conf.Limit.SubscribePaceShadowRates),
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -246,7 +249,7 @@ func (r *RoomManager) Stop() {
 	r.lock.RUnlock()
 
 	for _, room := range rooms {
-		room.Close(types.ParticipantCloseReasonRoomManagerStop)
+		room.Close(types.RoomCloseReasonServerShutdown)
 	}
 
 	r.roomManagerServer.Kill()
@@ -306,7 +309,7 @@ func (r *RoomManager) StartSession(
 	room, err := r.getOrCreateRoom(ctx, createRoom)
 	if err != nil {
 		if pi.Identity != "" {
-			prometheus.IncrementParticipantRtcCanceled(1)
+			prometheus.IncrementParticipantRtcCanceled(1, false, pi.Client.GetSdk())
 		}
 		return err
 	}
@@ -359,7 +362,7 @@ func (r *RoomManager) StartSession(
 						Leave: leave,
 					},
 				})
-				prometheus.IncrementParticipantRtcCanceled(1)
+				prometheus.IncrementParticipantRtcCanceled(1, participant.IsWarpEnabled(), participant.GetClientInfo().GetSdk())
 				return errors.New("could not restart closed participant")
 			}
 
@@ -383,11 +386,11 @@ func (r *RoomManager) StartSession(
 				pi.ReconnectReason,
 			); err != nil {
 				participant.GetLogger().Warnw("could not resume participant", err)
-				prometheus.IncrementParticipantRtcCanceled(1)
+				prometheus.IncrementParticipantRtcCanceled(1, participant.IsWarpEnabled(), participant.GetClientInfo().GetSdk())
 				return err
 			}
 			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), r.currentNode.NodeID(), pi.ReconnectReason)
-			prometheus.IncrementParticipantRtcActive(1)
+			prometheus.IncrementParticipantRtcActive(1, participant.IsWarpEnabled())
 
 			go room.HandleSyncState(participant, pi.SyncState)
 
@@ -419,7 +422,7 @@ func (r *RoomManager) StartSession(
 				Leave: leave,
 			},
 		})
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, false, pi.Client.GetSdk())
 		return errors.New("could not restart participant")
 	}
 
@@ -436,6 +439,7 @@ func (r *RoomManager) StartSession(
 		"nodeID", r.currentNode.NodeID(),
 		"numParticipants", room.GetParticipantCount(),
 		"participantInit", &pi,
+		"apiKey", pi.APIKey,
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)
@@ -484,6 +488,7 @@ func (r *RoomManager) StartSession(
 		enabledCodecs = append(enabledCodecs, &livekit.Codec{Mime: mime.MimeTypeRTX.String()})
 	}
 
+	enableWarp := !useOneShotSignallingMode && r.config.RTC.EnableWarp
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                 pi.Identity,
 		Name:                     pi.Name,
@@ -527,6 +532,7 @@ func (r *RoomManager) StartSession(
 		SubscriberAllowPause:              subscriberAllowPause,
 		SubscriptionLimitAudio:            r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:            r.config.Limit.SubscriptionLimitVideo,
+		SubscribePacer:                    r.subscribePacer,
 		PlayoutDelay:                      roomInternal.GetPlayoutDelay(),
 		SyncStreams:                       roomInternal.GetSyncStreams(),
 		ForwardStats:                      r.forwardStats,
@@ -541,9 +547,13 @@ func (r *RoomManager) StartSession(
 		EnableDataTracks:                  r.config.EnableDataTracks,
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
+		EnableWarp:                        enableWarp,
+		MediaBatchIOEnabled: r.config.RTC.BatchIO.BatchSize > 0 &&
+			(r.config.RTC.ICEPortRangeStart == 0 || r.config.RTC.ICEPortRangeEnd == 0) &&
+			r.config.RTC.UDPPort.Valid(),
 	})
 	if err != nil {
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
 	iceConfig := r.setIceConfig(room.Name(), participant)
@@ -559,7 +569,7 @@ func (r *RoomManager) StartSession(
 	if err = room.Join(participant, requestSource, &opts, iceServers); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
 
@@ -571,7 +581,7 @@ func (r *RoomManager) StartSession(
 		participantServerClosers.Close()
 		pLogger.Errorw("could not join register participant topic", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
 
@@ -582,7 +592,7 @@ func (r *RoomManager) StartSession(
 			participantServerClosers.Close()
 			pLogger.Errorw("could not join register participant topic for rtc rest participant server", err)
 			_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-			prometheus.IncrementParticipantRtcCanceled(1)
+			prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 			return err
 		}
 	}
@@ -600,13 +610,11 @@ func (r *RoomManager) StartSession(
 		}
 	}
 
-	newProto := room.ToProto()
-
 	// update room store with new numParticipants
-	persistRoomForParticipantCount(newProto)
+	persistRoomForParticipantCount(room.ToProto())
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region(), Node: string(r.currentNode.NodeID())}
-	r.telemetry.ParticipantJoined(ctx, newProto, participant.ToProto(), pi.Client, clientMeta, true, participant.TelemetryGuard())
+	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true, participant.TelemetryGuard())
 	participant.AddOnClose(types.ParticipantCloseKeyNormal, func(p types.LocalParticipant) {
 		participantServerClosers.Close()
 
@@ -653,7 +661,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	}
 
 	// create new room, get details first
-	ri, internal, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
+	// createRoom is reassigned to the request with the room preset applied, so that a room
+	// composite egress from the preset, which RoomInternal has no field for, is started
+	ri, internal, createRoom, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
 	if err != nil {
 		return nil, err
 	}
@@ -692,12 +702,12 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		return nil, err
 	}
 
-	newRoom.OnClose(func() {
+	newRoom.OnClose(func(reason types.RoomCloseReason) {
 		killRoomServer()
 		killDispServer()
 
 		roomInfo := newRoom.ToProto()
-		r.telemetry.RoomEnded(ctx, roomInfo)
+		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
 		if err := r.deleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger().Errorw("could not delete room", err)
@@ -730,6 +740,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	prometheus.RoomStarted()
 
 	if created && createRoom.GetEgress().GetRoom() != nil {
+		if r.egressLauncher == nil {
+			newRoom.Release()
+			return nil, ErrEgressNotConnected
+		}
+
 		// ensure room name matches
 		createRoom.Egress.Room.RoomName = createRoom.Name
 		_, err = r.egressLauncher.StartEgress(ctx, &rpc.StartEgressRequest{
@@ -943,7 +958,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		}
 	} else {
 		room.Logger().Infow("deleting room")
-		room.Close(types.ParticipantCloseReasonServiceRequestDeleteRoom)
+		room.Close(types.RoomCloseReasonAPIDelete)
 	}
 	return &livekit.DeleteRoomResponse{}, nil
 }
@@ -1098,11 +1113,14 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 
 			var username, credential string
 			if s.Secret != "" {
-				// Generate dynamic credentials using TURN static auth secrets
+				// Generate dynamic credentials using TURN static auth secrets.
+				// 0 means use the default; clamp the rest so a negative or overflowing TTL
+				// cannot produce a wrong-lifetime credential.
 				ttl := s.TTL
 				if ttl == 0 {
-					ttl = 14400 // Default 4 hours
+					ttl = config.DefaultExternalTURNTTLSeconds
 				}
+				ttl, _ = config.ClampTURNTTLSeconds(ttl)
 
 				expiry := time.Now().Add(time.Duration(ttl) * time.Second).Unix()
 				participantID := string(participant.ID())
