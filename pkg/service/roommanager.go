@@ -610,11 +610,13 @@ func (r *RoomManager) StartSession(
 		}
 	}
 
+	newProto := room.ToProto()
+
 	// update room store with new numParticipants
-	persistRoomForParticipantCount(room.ToProto())
+	persistRoomForParticipantCount(newProto)
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region(), Node: string(r.currentNode.NodeID())}
-	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true, participant.TelemetryGuard())
+	r.telemetry.ParticipantJoined(ctx, newProto, participant.ToProto(), pi.Client, clientMeta, true, participant.TelemetryGuard())
 	participant.AddOnClose(types.ParticipantCloseKeyNormal, func(p types.LocalParticipant) {
 		participantServerClosers.Close()
 
